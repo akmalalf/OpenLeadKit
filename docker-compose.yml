@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-openleadkit}
+      POSTGRES_USER: ${POSTGRES_USER:-openleadkit_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-dev-password-change-me}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - openleadkit_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  openleadkit_postgres:

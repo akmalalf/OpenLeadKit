@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use OpenLeadKit, please cite this software."
+title: "OpenLeadKit"
+version: "0.1.0"
+type: software
+license: Apache-2.0
+repository-code: "https://github.com/akmalalf/OpenLeadKit"
+url: "https://github.com/akmalalf/OpenLeadKit"
+authors:
+  - family-names: "Akmal"
+    given-names: "Alif Taqiyyuddin"
+    alias: "akmalalf"
+    website: "https://github.com/akmalalf"
+date-released: 2026-07-29

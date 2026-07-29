@@ -1,0 +1,44 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Python environments and generated packaging metadata
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Test, type-check, lint, and coverage output
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Runtime output and user data
+*.log
+input/*.xlsx
+exports/*.xlsx
+data/*
+
+!input/.gitkeep
+!exports/.gitkeep
+!data/.gitkeep
+
+# Database exports
+*.sql
+*.dump
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+
+# Local agent instructions and overrides
+AGENTS.md
+AGENTS.override.md

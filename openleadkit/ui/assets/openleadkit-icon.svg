@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44" role="img" aria-labelledby="title">
+  <title id="title">OpenLeadKit</title>
+  <rect width="44" height="44" rx="10" fill="#18231d"/>
+  <path d="M7 22c0-6.4 3.8-10 9.8-10S27 15.6 27 22s-4.1 10-10.2 10S7 28.4 7 22Zm5.2 0c0 3.8 1.7 5.8 4.8 5.8s4.8-2 4.8-5.8-1.7-5.8-4.8-5.8-4.8 2-4.8 5.8Z" fill="#e9f7ed"/>
+  <path d="M29 12h4.8v15.6H39V32H29V12Z" fill="#e9f7ed"/>
+</svg>

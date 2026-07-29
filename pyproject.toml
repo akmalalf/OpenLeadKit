@@ -1,0 +1,95 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openleadkit"
+version = "0.1.0"
+description = "An open-source local-business discovery and lead-qualification toolkit powered by OpenStreetMap, PostgreSQL, and Python."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+authors = [
+  {name = "Alif Taqiyyuddin Akmal"},
+]
+dependencies = [
+  "alembic>=1.14,<2",
+  "beautifulsoup4>=4.12,<5",
+  "folium>=0.20,<1",
+  "httpx>=0.27,<1",
+  "openpyxl>=3.1,<4",
+  "pandas>=2.2,<3",
+  "psycopg[binary]>=3.2,<4",
+  "pydantic>=2.10,<3",
+  "pydantic-settings>=2.7,<3",
+  "sqlalchemy>=2.0,<3",
+  "streamlit>=1.46,<2",
+  "streamlit-folium>=0.27,<1",
+  "tenacity>=9,<10",
+]
+
+[project.urls]
+Homepage = "https://github.com/akmalalf/OpenLeadKit"
+Repository = "https://github.com/akmalalf/OpenLeadKit"
+Issues = "https://github.com/akmalalf/OpenLeadKit/issues"
+Changelog = "https://github.com/akmalalf/OpenLeadKit/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.14,<2",
+  "pytest>=9.0.3,<10",
+  "pytest-cov>=6,<7",
+  "respx>=0.22,<1",
+  "ruff>=0.9,<1",
+  "types-openpyxl>=3.1.5",
+  "types-beautifulsoup4>=4.12",
+]
+
+[tool.setuptools.packages.find]
+include = ["openleadkit*"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+markers = ["integration: requires a safe PostgreSQL test database"]
+
+[tool.coverage.run]
+source = ["openleadkit"]
+branch = true
+omit = [
+  "openleadkit/ui/*",
+  "openleadkit/models/*",
+  "openleadkit/repositories/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 80
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "C4", "RUF"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"pages/*.py" = ["E402"]
+"scripts/*.py" = ["E402"]
+"tests/**/*.py" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+check_untyped_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+plugins = ["pydantic.mypy"]
+exclude = ["migrations/"]
+
+[[tool.mypy.overrides]]
+module = ["streamlit.*", "streamlit_folium.*", "pandas.*"]
+ignore_missing_imports = true
