@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -40,6 +41,19 @@ class DashboardSnapshot:
     recent_searches: tuple[SearchRun, ...]
     last_search: SearchRun | None
     last_export: ExportLog | None
+
+
+@dataclass(frozen=True)
+class ExportedBusinessEntry:
+    business_id: str
+    business: Business | None
+
+
+@dataclass(frozen=True)
+class ExportBusinessSelection:
+    businesses: tuple[Business, ...]
+    approved_business_ids: frozenset[uuid.UUID]
+    missing_historical_count: int
 
 
 class LeadReviewSort(enum.StrEnum):
@@ -300,5 +314,142 @@ class LeadViewRepository:
             )
         )
 
-    def export_history(self) -> list[ExportLog]:
-        return list(self.session.scalars(select(ExportLog).order_by(ExportLog.created_at.desc())))
+    def export_history_count(self) -> int:
+        return self._count(ExportLog)
+
+    def export_history_page(self, page: int, page_size: int) -> list[ExportLog]:
+        if page < 1:
+            raise ValueError("The export history page must be at least 1")
+        if not 1 <= page_size <= 100:
+            raise ValueError("The export history page size must be between 1 and 100")
+        return list(
+            self.session.scalars(
+                select(ExportLog)
+                .order_by(ExportLog.created_at.desc(), ExportLog.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+        )
+
+    def exportable_history_count(self) -> int:
+        return self._count(
+            ExportLog,
+            ExportLog.status == ExportStatus.COMPLETED,
+            ExportLog.exported_count > 0,
+        )
+
+    def exportable_history_page(self, page: int, page_size: int) -> list[ExportLog]:
+        if page < 1:
+            raise ValueError("The export selection page must be at least 1")
+        if not 1 <= page_size <= 100:
+            raise ValueError("The export selection page size must be between 1 and 100")
+        return list(
+            self.session.scalars(
+                select(ExportLog)
+                .where(
+                    ExportLog.status == ExportStatus.COMPLETED,
+                    ExportLog.exported_count > 0,
+                )
+                .order_by(ExportLog.created_at.desc(), ExportLog.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+        )
+
+    def export_logs_by_ids(self, export_log_ids: Sequence[uuid.UUID]) -> list[ExportLog]:
+        if not export_log_ids:
+            return []
+        return list(
+            self.session.scalars(
+                select(ExportLog)
+                .where(
+                    ExportLog.id.in_(export_log_ids),
+                    ExportLog.status == ExportStatus.COMPLETED,
+                    ExportLog.exported_count > 0,
+                )
+                .order_by(ExportLog.created_at.desc(), ExportLog.id.desc())
+            )
+        )
+
+    def export_business_selection(
+        self,
+        export_logs: Sequence[ExportLog],
+        *,
+        include_approved: bool,
+    ) -> ExportBusinessSelection:
+        historical_ids: set[uuid.UUID] = set()
+        for export_log in export_logs:
+            for raw_id in export_log.exported_business_ids:
+                try:
+                    historical_ids.add(uuid.UUID(raw_id))
+                except (TypeError, ValueError, AttributeError):
+                    continue
+
+        filters: list[ColumnElement[bool]] = []
+        if include_approved:
+            filters.append(Business.review_status == ReviewStatus.APPROVED)
+        if historical_ids:
+            filters.append(Business.id.in_(historical_ids))
+        if not filters:
+            return ExportBusinessSelection((), frozenset(), len(historical_ids))
+
+        businesses = tuple(
+            self.session.scalars(
+                select(Business)
+                .options(
+                    selectinload(Business.search_runs).selectinload(BusinessSearchRun.search_run)
+                )
+                .where(or_(*filters))
+                .order_by(Business.business_name.asc(), Business.id.asc())
+            )
+        )
+        available_historical_ids = {
+            business.id for business in businesses if business.id in historical_ids
+        }
+        approved_ids = frozenset(
+            business.id
+            for business in businesses
+            if include_approved and business.review_status == ReviewStatus.APPROVED
+        )
+        return ExportBusinessSelection(
+            businesses=businesses,
+            approved_business_ids=approved_ids,
+            missing_historical_count=len(historical_ids - available_historical_ids),
+        )
+
+    def exported_business_page(
+        self,
+        export_log: ExportLog,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[ExportedBusinessEntry], int]:
+        if page < 1:
+            raise ValueError("The exported-business page must be at least 1")
+        if not 1 <= page_size <= 100:
+            raise ValueError("The exported-business page size must be between 1 and 100")
+        business_ids = export_log.exported_business_ids
+        start = (page - 1) * page_size
+        selected_ids = business_ids[start : start + page_size]
+        parsed_ids: list[tuple[str, uuid.UUID | None]] = []
+        for raw_id in selected_ids:
+            try:
+                parsed_ids.append((raw_id, uuid.UUID(raw_id)))
+            except (TypeError, ValueError, AttributeError):
+                parsed_ids.append((str(raw_id), None))
+        valid_ids = [business_id for _, business_id in parsed_ids if business_id is not None]
+        businesses = (
+            list(self.session.scalars(select(Business).where(Business.id.in_(valid_ids))))
+            if valid_ids
+            else []
+        )
+        by_id = {business.id: business for business in businesses}
+        return (
+            [
+                ExportedBusinessEntry(
+                    business_id=raw_id,
+                    business=by_id.get(business_id) if business_id is not None else None,
+                )
+                for raw_id, business_id in parsed_ids
+            ],
+            len(business_ids),
+        )
