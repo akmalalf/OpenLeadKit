@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     overpass_api_url: HttpUrl = HttpUrl("https://overpass-api.de/api/interpreter")
     nominatim_api_url: HttpUrl = HttpUrl("https://nominatim.openstreetmap.org")
-    http_user_agent: str = "OpenLeadKit/0.1.0"
+    http_user_agent: str = "OpenLeadKit/0.2.0"
     http_connect_timeout_seconds: float = Field(10, ge=1, le=60)
     http_read_timeout_seconds: float = Field(30, ge=1, le=180)
     http_max_response_bytes: int = Field(5_000_000, ge=10_000, le=25_000_000)
