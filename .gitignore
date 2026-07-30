@@ -40,5 +40,6 @@ data/*
 .vscode/
 
 # Local agent instructions and overrides
+.agents/
 AGENTS.md
 AGENTS.override.md
