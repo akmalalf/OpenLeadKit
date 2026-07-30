@@ -7,10 +7,28 @@ uses Semantic Versioning.
 
 ### Added
 
-- Initial application, documentation, tests, and contributor automation.
+- Generate standalone Excel exports without requiring a custom input workbook.
+- Add paginated export history with workbook downloads and exported-row inspection.
+- Allow combining the current Approved queue with multiple historical export batches.
+
+### Changed
+
+- Paginate CRM export batch selection and combined export previews.
+- Remove local workbook paths from export history and expose available files only through
+  download actions.
+- Save manual lead details, qualification, notes, and the review decision in one action.
+- Preserve unsaved Lead Review drafts, queue sort, and filters across page navigation for
+  the browser session, then clear a lead's draft after a successful review decision.
+- Open Lead Review website drafts in a new browser tab without saving them or requesting
+  them from the application server.
+- Recheck duplicate candidates after manual edits change matching business fields.
 
 ### Fixed
 
+- Synchronize Lead Review fields without form-submit buffering so unsaved notes and edits
+  reach session state before page navigation.
+- Apply only the newest map rectangle and normalize Leaflet world-copy longitudes before
+  validating the search boundary.
 - Commit review and duplicate mutations before Streamlit reruns.
 - Pin website connections to validated public IP addresses and stream size-limited robots files.
 - Preserve exact duplicate candidates without location fields.
@@ -21,6 +39,7 @@ uses Semantic Versioning.
 
 ### Added
 
+- Initial application, documentation, tests, and contributor automation.
 - PostgreSQL schema and Alembic migration.
 - OpenStreetMap/Overpass discovery with optional Nominatim area lookup.
 - Global area lookup with optional country-code filters and country-neutral phone normalization.

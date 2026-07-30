@@ -4,7 +4,7 @@
 
 OpenLeadKit retrieves public business data from OpenStreetMap through Overpass, stores it in
 PostgreSQL, helps reviewers assess duplicates and lead quality, and exports approved leads to an
-existing Excel CRM workbook. The application runs locally and does not send bulk messages.
+Excel workbook. The application runs locally and does not send bulk messages.
 
 ## Features
 
@@ -14,8 +14,10 @@ existing Excel CRM workbook. The application runs locally and does not send bulk
 - Name, phone, URL, domain, Instagram, and address normalization.
 - PostgreSQL as the system of record, using `citext`, `pg_trgm`, UUID, JSONB, and audit records.
 - Duplicate candidates based on OSM identity, domain, phone, and similar names in the same area.
-- Manual review and qualification, safe website inspection, and a transparent suggestion score.
-- Copy-only export to the `Raw Import` worksheet with duplicate detection and post-save checks.
+- Manual review and qualification, browser-opened website links, and a transparent suggestion
+  score.
+- Standalone Excel export with an optional custom CRM template, duplicate detection, and
+  post-save checks.
 - Search, review, website-check, duplicate-decision, merge, and export history.
 
 ## Non-goals
@@ -77,8 +79,8 @@ chmod 600 .env
 ```
 
 Edit `.env`, especially `DATABASE_URL`, `TEST_DATABASE_URL`, and `APP_PROJECT_URL`. Never
-commit `.env`. API endpoints, timeouts, response limits, timezone, duplicate threshold, and
-workbook paths are configurable there as well.
+commit `.env`. API endpoints, timeouts, response limits, timezone, duplicate threshold, and the
+optional custom-workbook path are configurable there as well.
 
 The in-application Settings page is read-only so it cannot create a second, conflicting
 configuration source. Edit `.env` and restart OpenLeadKit to apply changes.
@@ -140,10 +142,18 @@ guess a country code.
 The lead-review page presents one record at a time. The **Sort by** control orders the queue in
 PostgreSQL by review need, discovery time, business name, city, or the calculated transparent
 suggestion score. The separate **Qualification filter** limits the queue to one qualification
-value. Changing either control returns the reviewer to the first lead. Reviewers can approve or
-reject the record, assign High, Medium, Low, Not Qualified, or Unknown status, add notes, and
-inspect the stored official website. Each change creates a `review_events` record. Suggestion
-scores never replace manual decisions.
+value. Both preferences remain active while the browser session is open, including after
+navigating to another page. Changing either control returns the reviewer to the first lead.
+Reviewers can correct public business, contact, location, and operating details; assign High,
+Medium, Low, Not Qualified, or Unknown status; add notes; and then save the complete review
+with one **Approve** or **Reject** action. Draft edits remain available when the reviewer visits
+another page and returns during the same browser session, without being written to PostgreSQL.
+Fields are synchronized to the session during normal interaction instead of waiting for a form
+submission. After a successful Approve or Reject transaction, that lead's session draft is cleared.
+**Open website in new tab** opens the current draft URL directly in the browser without saving
+the other draft fields or requesting the site from the OpenLeadKit server. Each changed field
+saved by Approve or Reject creates a `review_events` record. Suggestion scores never replace
+manual decisions.
 
 The Dashboard recent-activity section lists up to five latest completed searches, followed by
 the most recent verified CRM export.
@@ -159,18 +169,32 @@ Merge recovery is manual. Locate the snapshot in `business_merges`, recreate the
 record or backup. Test the procedure against the test database and create a backup before
 operating on important data.
 
-## Inspect websites
+## Open websites
 
-Website inspection starts only after an explicit user action and only for a stored official
-URL. The HTTP layer blocks localhost, private networks, link-local, multicast, reserved ranges,
-unsafe redirects, oversized responses, and non-HTML content. Connections are pinned to the
-public IP address that passed validation while preserving the original HTTP Host and TLS server
-name. It enforces `robots.txt`, timeouts, and redirect limits. It does not download images, PDF
-files, media, archives, office documents, or authenticated content.
+The Lead Review page opens the current draft website URL in a new browser tab only after the
+reviewer clicks **Open website in new tab**. OpenLeadKit does not request the website from its
+server and does not save the draft as part of this action. The browser connects directly to the
+external website, which may apply its own privacy policy and security controls.
 
 ## Export to the Excel CRM
 
-Place the source workbook at:
+No input workbook is required. From the CRM Export page, OpenLeadKit creates a timestamped file
+such as:
+
+```text
+exports/OpenLeadKit_Leads_20260729_120000.xlsx
+```
+
+The generated workbook contains a formatted `Raw Import` worksheet and only the selected leads
+shown in the export preview.
+
+The CRM Export page can combine the current Approved queue with multiple completed historical
+export batches. Historical batches are selected from a paginated list, selections persist while
+moving between batch pages, and duplicate business IDs are included only once. Historical
+batches use the latest stored business values; use History → Exports when the exact values from
+an original workbook are required.
+
+To preserve the layout of an existing CRM workbook instead, place that optional template at:
 
 ```text
 input/Website_Lead_Funnel_CRM.xlsx
@@ -182,10 +206,17 @@ Inspect it without saving:
 python scripts/inspect_workbook.py
 ```
 
-The export page includes only approved leads. It never overwrites the source workbook. Instead,
-it creates a timestamped copy in `exports/`, changes only the `Raw Import` worksheet, reopens the
-saved file, and verifies the batch before marking database records as Exported. Google rating
-and review-count fields remain empty because OpenLeadKit never invents those values.
+When a custom template is present, the export page never overwrites it. Instead, it creates a
+timestamped copy in `exports/` and changes only the `Raw Import` worksheet. In both modes,
+OpenLeadKit reopens the saved file and verifies the batch before marking database records as
+Exported. Google rating and review-count fields remain empty because OpenLeadKit never invents
+those values.
+
+The History page keeps export batches in newest-first order. Its Exports view paginates both the
+recorded workbook list and the rows for the selected batch. When the recorded file is still in
+the configured `exports/` directory, users can download it again and inspect the exact exported
+values. If the file has been removed, OpenLeadKit shows the current database values for the
+recorded business IDs when those records are still available.
 
 ## Back up the database
 
@@ -232,8 +263,7 @@ All external HTTP requests are mocked in tests.
 - **Migrations are behind:** run `alembic upgrade head`.
 - **Extension creation is denied:** ask a PostgreSQL administrator to create `citext` and
   `pg_trgm`.
-- **The workbook is missing:** other workflows remain available; place the workbook at the
-  configured input path.
+- **The custom workbook is missing:** OpenLeadKit generates a standalone XLSX export instead.
 - **Overpass returns 429 or 5xx:** wait, reduce the search area or limit, and retry manually.
 - **Nominatim results are ambiguous:** select a result explicitly; the application does not
   select the first result automatically.
