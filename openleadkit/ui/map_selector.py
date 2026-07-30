@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from math import floor
 from typing import Any
 
 import folium
@@ -10,6 +11,17 @@ from folium.plugins import Draw, LocateControl
 from streamlit_folium import st_folium
 
 from openleadkit.schemas import BoundingBox
+
+
+def _normalize_world_copy_longitudes(longitudes: list[float]) -> list[float] | None:
+    """Shift one Leaflet world copy into the canonical longitude range."""
+    if not longitudes:
+        return None
+    offset = 360 * floor((min(longitudes) + 180) / 360)
+    normalized = [longitude - offset for longitude in longitudes]
+    if not all(-180 <= longitude <= 180 for longitude in normalized):
+        return None
+    return normalized
 
 
 def extract_rectangle_bounds(drawing: object) -> dict[str, float] | None:
@@ -43,12 +55,22 @@ def extract_rectangle_bounds(drawing: object) -> dict[str, float] | None:
         return None
 
     longitudes, latitudes = zip(*points, strict=True)
+    normalized_longitudes = _normalize_world_copy_longitudes(list(longitudes))
+    if normalized_longitudes is None or not all(-90 <= latitude <= 90 for latitude in latitudes):
+        return None
     return {
         "south": min(latitudes),
-        "west": min(longitudes),
+        "west": min(normalized_longitudes),
         "north": max(latitudes),
-        "east": max(longitudes),
+        "east": max(normalized_longitudes),
     }
+
+
+def extract_latest_rectangle_bounds(drawings: object) -> dict[str, float] | None:
+    """Return bounds from only the most recently drawn GeoJSON rectangle."""
+    if not isinstance(drawings, Sequence) or isinstance(drawings, (str, bytes)) or not drawings:
+        return None
+    return extract_rectangle_bounds(drawings[-1])
 
 
 def render_bounding_box_map(
@@ -126,6 +148,6 @@ def render_bounding_box_map(
         key=key,
         height=460,
         use_container_width=True,
-        returned_objects=["last_active_drawing"],
+        returned_objects=["all_drawings"],
     )
-    return extract_rectangle_bounds(output.get("last_active_drawing"))
+    return extract_latest_rectangle_bounds(output.get("all_drawings"))

@@ -24,6 +24,33 @@ from openleadkit.models import (
 )
 from openleadkit.schemas import BusinessRecord
 from openleadkit.services.deduplication import canonical_pair
+from openleadkit.services.normalization import (
+    extract_domain,
+    normalize_business_name,
+    normalize_phone,
+)
+from openleadkit.services.review import LeadReviewDetails
+
+REVIEW_DETAIL_FIELDS = (
+    ("business_name", "Business Name"),
+    ("website_url", "Website"),
+    ("phone", "Phone"),
+    ("email", "Email"),
+    ("instagram", "Instagram"),
+    ("address", "Address"),
+    ("city", "City"),
+    ("district", "District"),
+    ("province", "Province"),
+    ("postcode", "Postcode"),
+    ("opening_hours", "Opening Hours"),
+)
+DUPLICATE_RELEVANT_REVIEW_FIELDS = {
+    "business_name",
+    "website_url",
+    "phone",
+    "city",
+    "district",
+}
 
 
 class LeadRepository:
@@ -146,8 +173,26 @@ class LeadRepository:
         review_status: ReviewStatus | None = None,
         qualification_status: QualificationStatus | None = None,
         notes: str | None = None,
+        details: LeadReviewDetails | None = None,
     ) -> None:
         changes: list[tuple[str, str | None, str | None]] = []
+        duplicate_fields_changed = False
+        if details is not None:
+            for field, event_type in REVIEW_DETAIL_FIELDS:
+                previous = getattr(business, field)
+                new = getattr(details, field)
+                if previous != new:
+                    changes.append((event_type, previous, new))
+                    setattr(business, field, new)
+                    duplicate_fields_changed = (
+                        duplicate_fields_changed or field in DUPLICATE_RELEVANT_REVIEW_FIELDS
+                    )
+            business.normalized_name = normalize_business_name(details.business_name)
+            business.normalized_domain = extract_domain(details.website_url)
+            business.normalized_phone = normalize_phone(details.phone)
+            if duplicate_fields_changed:
+                self._create_duplicate_candidates(business)
+
         if review_status is not None and business.review_status != review_status:
             changes.append(("Review Status", business.review_status.value, review_status.value))
             business.review_status = review_status
@@ -163,9 +208,10 @@ class LeadRepository:
                 )
             )
             business.qualification_status = qualification_status
-        if notes is not None and business.raw_notes != notes:
-            changes.append(("Notes", business.raw_notes, notes))
-            business.raw_notes = notes
+        submitted_notes = details.notes if details is not None else notes
+        if (details is not None or notes is not None) and business.raw_notes != submitted_notes:
+            changes.append(("Notes", business.raw_notes, submitted_notes))
+            business.raw_notes = submitted_notes
         for event_type, previous, new in changes:
             self.session.add(
                 ReviewEvent(

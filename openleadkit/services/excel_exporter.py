@@ -1,4 +1,4 @@
-"""Safe inspection and copy-only export for the existing CRM workbook."""
+"""Safe Excel export with optional custom workbook support."""
 
 from __future__ import annotations
 
@@ -14,8 +14,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import Cell
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from openleadkit.exceptions import ExportError, WorkbookCompatibilityError
@@ -50,6 +52,30 @@ LOGICAL_COLUMNS = (
 REQUIRED_COLUMNS = {"Business Name", "Source URL", "Batch ID"}
 EXTENSION_PATTERN = re.compile(rb"<extLst(?:\s[^>]*)?>.*?</extLst>", re.DOTALL)
 XR_NAMESPACE = b' xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision"'
+GENERATED_HEADER_FILL = PatternFill("solid", fgColor="246B49")
+GENERATED_HEADER_FONT = Font(color="FFFFFF", bold=True)
+GENERATED_COLUMN_WIDTHS = {
+    "Imported At": 20,
+    "Source": 18,
+    "Search Query": 28,
+    "Business Name": 32,
+    "Category": 22,
+    "City": 20,
+    "Address": 42,
+    "Source URL": 42,
+    "Website URL": 36,
+    "Phone": 20,
+    "Email": 30,
+    "Instagram": 24,
+    "Google Rating": 15,
+    "Review Count": 15,
+    "Opening Hours": 28,
+    "Latitude": 14,
+    "Longitude": 14,
+    "Scraper/Method": 34,
+    "Batch ID": 32,
+    "Raw Notes": 48,
+}
 
 
 def _key(value: Any) -> str:
@@ -148,6 +174,90 @@ def inspect_workbook(path: Path) -> WorkbookInspection:
         )
     finally:
         workbook.close()
+
+
+def read_exported_rows(
+    path: Path,
+    batch_id: str,
+    *,
+    offset: int = 0,
+    limit: int = 25,
+) -> tuple[dict[str, Any], ...]:
+    """Read one bounded page of exact rows from a previously exported workbook."""
+    if offset < 0:
+        raise ValueError("The export row offset cannot be negative")
+    if not 1 <= limit <= 100:
+        raise ValueError("The export row limit must be between 1 and 100")
+    if not path.is_file():
+        raise WorkbookCompatibilityError(f"Workbook not found: {path}")
+
+    workbook = load_workbook(path, read_only=True, data_only=False)
+    try:
+        sheet = raw_import_sheet(workbook)
+        header_row = detect_header_row(sheet)
+        mapping = header_mapping(sheet, header_row)
+        missing = REQUIRED_COLUMNS - mapping.keys()
+        if missing:
+            raise WorkbookCompatibilityError(
+                "Required columns were not found: " + ", ".join(sorted(missing))
+            )
+
+        batch_index = mapping["Batch ID"] - 1
+        max_column = max(mapping.values())
+        matched = 0
+        rows: list[dict[str, Any]] = []
+        for values in sheet.iter_rows(
+            min_row=header_row + 1,
+            min_col=1,
+            max_col=max_column,
+            values_only=True,
+        ):
+            if values[batch_index] != batch_id:
+                continue
+            if matched < offset:
+                matched += 1
+                continue
+            rows.append(
+                {
+                    logical_name: values[column_number - 1]
+                    for logical_name, column_number in mapping.items()
+                }
+            )
+            if len(rows) >= limit:
+                break
+        return tuple(rows)
+    finally:
+        workbook.close()
+
+
+def create_default_workbook(path: Path) -> None:
+    """Create a neutral OpenLeadKit workbook without relying on a private template."""
+    workbook = Workbook()
+    sheet = workbook.active
+    if not isinstance(sheet, Worksheet):
+        workbook.close()
+        raise ExportError("OpenLeadKit could not create the Raw Import worksheet")
+    sheet.title = "Raw Import"
+    sheet.freeze_panes = "A2"
+    sheet.row_dimensions[1].height = 24
+    sheet.auto_filter.ref = f"A1:{get_column_letter(len(LOGICAL_COLUMNS))}1"
+
+    for column_number, logical_name in enumerate(LOGICAL_COLUMNS, 1):
+        header = sheet.cell(1, column_number, logical_name)
+        header.fill = GENERATED_HEADER_FILL
+        header.font = GENERATED_HEADER_FONT
+        header.alignment = Alignment(vertical="center")
+        sheet.column_dimensions[get_column_letter(column_number)].width = GENERATED_COLUMN_WIDTHS[
+            logical_name
+        ]
+
+    sheet.cell(2, 1).number_format = "yyyy-mm-dd hh:mm:ss"
+    sheet.cell(2, 16).number_format = "0.000000"
+    sheet.cell(2, 17).number_format = "0.000000"
+    workbook.properties.creator = "OpenLeadKit"
+    workbook.properties.title = "OpenLeadKit lead export"
+    workbook.save(path)
+    workbook.close()
 
 
 @dataclass(frozen=True)
@@ -332,20 +442,31 @@ class ExportResult:
 
 
 def export_workbook(
-    source: Path,
+    source: Path | None,
     output_dir: Path,
     records: list[ExportRecord],
     *,
     now: datetime,
 ) -> ExportResult:
-    inspection = inspect_workbook(source)
+    inspection = inspect_workbook(source) if source is not None else None
     output_dir.mkdir(parents=True, exist_ok=True)
-    output = output_dir / f"Website_Lead_Funnel_CRM_{now:%Y%m%d_%H%M%S}.xlsx"
+    output_name = (
+        f"Website_Lead_Funnel_CRM_{now:%Y%m%d_%H%M%S}.xlsx"
+        if source is not None
+        else f"OpenLeadKit_Leads_{now:%Y%m%d_%H%M%S}.xlsx"
+    )
+    output = output_dir / output_name
     if output.exists():
         raise ExportError("The output filename already exists; retry in one second")
     batch_id = generate_batch_id(records, now)
     try:
-        shutil.copy2(source, output)
+        if source is None:
+            create_default_workbook(output)
+            inspection = inspect_workbook(output)
+        else:
+            shutil.copy2(source, output)
+        if inspection is None:  # Defensive guard for type checkers and unexpected failures.
+            raise ExportError("Workbook inspection was not available")
         workbook = load_workbook(output)
         sheet = raw_import_sheet(workbook)
         mapping = header_mapping(sheet, inspection.header_row)
@@ -378,9 +499,14 @@ def export_workbook(
             exported.append(record.business_id)
             keys = keys_with_record(keys, record)
             row += 1
+        if source is None:
+            final_row = max(inspection.header_row, row - 1)
+            final_column = get_column_letter(max(mapping.values()))
+            sheet.auto_filter.ref = f"A{inspection.header_row}:{final_column}{final_row}"
         workbook.save(output)
         workbook.close()
-        _restore_unsupported_sheet_extensions(source, output)
+        if source is not None:
+            _restore_unsupported_sheet_extensions(source, output)
 
         verification = load_workbook(output, read_only=True, data_only=False)
         verify_sheet = raw_import_sheet(verification)

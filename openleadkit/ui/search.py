@@ -190,7 +190,8 @@ def render() -> None:
                the map on your current position.
             2. Click the **rectangle tool** at the top-left.
             3. Drag one rectangle over the area you want to search. The pale green
-               rectangle shows the boundary currently in use.
+               rectangle shows the boundary currently in use. If you draw again,
+               only the newest rectangle is applied.
             """
         )
         st.caption(

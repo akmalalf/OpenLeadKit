@@ -4,6 +4,7 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
 
@@ -14,6 +15,7 @@ from openleadkit.services.excel_exporter import (
     export_workbook,
     generate_batch_id,
     inspect_workbook,
+    read_exported_rows,
     record_exists,
     row_mapping,
 )
@@ -99,6 +101,60 @@ def test_export_modifies_only_raw_import_and_preserves_source(tmp_path: Path) ->
     assert raw.freeze_panes == "A6"
     assert raw["D6"].fill.fgColor.rgb.endswith("EAF2EC")
     workbook.close()
+
+
+def test_export_creates_standalone_workbook_without_source(tmp_path: Path) -> None:
+    output_dir = tmp_path / "exports"
+    now = datetime(2026, 7, 29, 12, 0, 0, tzinfo=UTC)
+    result = export_workbook(None, output_dir, [export_record()], now=now)
+
+    assert result.output_path.name == "OpenLeadKit_Leads_20260729_120000.xlsx"
+    workbook = load_workbook(result.output_path, data_only=False)
+    assert workbook.sheetnames == ["Raw Import"]
+    raw = workbook["Raw Import"]
+    assert tuple(raw.cell(1, column).value for column in range(1, 21)) == LOGICAL_COLUMNS
+    assert raw["D2"].value == "Arunika Coffee"
+    assert raw["S2"].value == result.batch_id
+    assert raw.freeze_panes == "A2"
+    assert raw.auto_filter.ref == "A1:T2"
+    assert raw["A1"].font.bold
+    assert raw["A1"].fill.fgColor.rgb.endswith("246B49")
+    assert raw["A2"].number_format == "yyyy-mm-dd hh:mm:ss"
+    assert raw["P2"].number_format == "0.000000"
+    workbook.close()
+
+
+def test_read_exported_rows_returns_one_exact_bounded_page(tmp_path: Path) -> None:
+    records = [
+        export_record(
+            identifier,
+            business_name=f"Business {identifier}",
+            city=f"City {identifier}",
+            website_url=f"https://business-{identifier}.example",
+            phone=f"+44207123000{identifier}",
+        )
+        for identifier in range(1, 4)
+    ]
+    result = export_workbook(
+        None,
+        tmp_path / "exports",
+        records,
+        now=datetime(2026, 7, 29, 12, 0, 0, tzinfo=UTC),
+    )
+
+    rows = read_exported_rows(result.output_path, result.batch_id, offset=1, limit=1)
+
+    assert len(rows) == 1
+    assert rows[0]["Business Name"] == "Business 2"
+    assert rows[0]["City"] == "City 2"
+    assert rows[0]["Batch ID"] == result.batch_id
+
+
+def test_read_exported_rows_rejects_unbounded_requests(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="offset"):
+        read_exported_rows(tmp_path / "missing.xlsx", "BATCH", offset=-1)
+    with pytest.raises(ValueError, match="limit"):
+        read_exported_rows(tmp_path / "missing.xlsx", "BATCH", limit=101)
 
 
 def test_export_skips_existing_records(tmp_path: Path) -> None:

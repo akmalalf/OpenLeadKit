@@ -39,7 +39,7 @@ def main() -> int:
         except Exception as exc:
             failures.append(f"workbook: {exc}")
     else:
-        print(f"INFO optional workbook is not present: {settings.excel_input}")
+        print(f"INFO optional custom workbook is not present: {settings.excel_input}")
     if failures:
         for failure in failures:
             print(f"FAILED {failure}", file=sys.stderr)
